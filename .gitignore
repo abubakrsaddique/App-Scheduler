@@ -1,0 +1,47 @@
+# -----------------
+# FRONTEND (Next.js / Node)
+# -----------------
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/.turbo/
+frontend/.parcel-cache/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# -----------------
+# BACKEND (Python)
+# -----------------
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.DS_Store
+
+# SQLite databases (local dev only)
+backend/*.sqlite
+backend/*.db
+
+# -----------------
+# SECRETS
+# -----------------
+*.env
+.env
+.env.*  # env files for different environments
+
+# -----------------
+# GENERAL
+# -----------------
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
