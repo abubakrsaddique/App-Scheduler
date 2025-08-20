@@ -12,81 +12,128 @@ load_dotenv()
 
 app = FastAPI()
 
-# ✅ Enable CORS for frontend (Next.js running on localhost:3000)
+# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # adjust when deploying
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Use persistent job store (SQLite file)
+# Persistent job store
 jobstores = {"default": SQLAlchemyJobStore(url="sqlite:///jobs.sqlite")}
 scheduler = BackgroundScheduler(jobstores=jobstores)
 scheduler.start()
 
-# ✅ Twitter API v2 Bearer Token (Free plan)
-BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
-if not BEARER_TOKEN:
-    raise RuntimeError("❌ Missing TWITTER_BEARER_TOKEN in .env")
+# Load API credentials from .env
+TWITTER_BEARER = os.getenv("TWITTER_BEARER_TOKEN")
+FACEBOOK_TOKEN = os.getenv("FACEBOOK_ACCESS_TOKEN")
+INSTAGRAM_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN")
+LINKEDIN_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN")
 
-TWEET_URL = "https://api.twitter.com/2/tweets"
+if not TWITTER_BEARER:
+    raise RuntimeError("Missing TWITTER_BEARER_TOKEN in .env")
 
-# ✅ Pydantic model
-class TweetTask(BaseModel):
-    text: str
-    run_at: str  # format: "2025-08-20 18:30:00"
+# App-specific endpoints (for demo)
+TWITTER_URL = "https://api.twitter.com/2/tweets"
+FACEBOOK_URL = "https://graph.facebook.com/me/feed"
+INSTAGRAM_URL = "https://graph.facebook.com/me/media"
+LINKEDIN_URL = "https://api.linkedin.com/v2/ugcPosts"
 
-# ✅ Function to post tweet using Twitter API v2
-def post_tweet(text: str):
-    headers = {
-        "Authorization": f"Bearer {BEARER_TOKEN}",
-        "Content-Type": "application/json",
-    }
+# Pydantic model
+class PostTask(BaseModel):
+    app: str  # "Twitter", "Facebook", "Instagram", "LinkedIn"
+    content: str
+    run_at: str  # "YYYY-MM-DD HH:MM:SS"
+
+# Post functions for each app
+def post_to_twitter(text: str):
+    headers = {"Authorization": f"Bearer {TWITTER_BEARER}", "Content-Type": "application/json"}
     payload = {"text": text}
-    response = requests.post(TWEET_URL, headers=headers, json=payload)
+    r = requests.post(TWITTER_URL, headers=headers, json=payload)
+    if r.status_code != 201:
+        print(f"❌ Twitter failed: {r.text}")
+        return {"error": r.json()}
+    print(f"✅ Twitter posted: {r.json()}")
+    return r.json()
 
-    if response.status_code != 201:
-        print(f"❌ Failed to post tweet: {response.text}")
-        return {"error": response.json()}
+def post_to_facebook(text: str):
+    payload = {"message": text, "access_token": FACEBOOK_TOKEN}
+    r = requests.post(FACEBOOK_URL, data=payload)
+    if r.status_code != 200:
+        print(f"❌ Facebook failed: {r.text}")
+        return {"error": r.json()}
+    print(f"✅ Facebook posted: {r.json()}")
+    return r.json()
 
-    data = response.json()
-    print(f"✅ Tweet posted: {data}")
-    return data
+def post_to_instagram(text: str):
+    payload = {"caption": text, "access_token": INSTAGRAM_TOKEN}
+    r = requests.post(INSTAGRAM_URL, data=payload)
+    if r.status_code != 200:
+        print(f"❌ Instagram failed: {r.text}")
+        return {"error": r.json()}
+    print(f"✅ Instagram posted: {r.json()}")
+    return r.json()
 
-# ✅ API: schedule a tweet
-@app.post("/schedule_tweet/")
-def schedule_tweet(task: TweetTask):
+def post_to_linkedin(text: str):
+    headers = {"Authorization": f"Bearer {LINKEDIN_TOKEN}", "Content-Type": "application/json"}
+    payload = {
+        "author": f"urn:li:person:{os.getenv('LINKEDIN_USER_ID')}",
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {"com.linkedin.ugc.ShareContent": {"shareCommentary": {"text": text}, "shareMediaCategory": "NONE"}},
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+    }
+    r = requests.post(LINKEDIN_URL, headers=headers, json=payload)
+    if r.status_code != 201:
+        print(f"❌ LinkedIn failed: {r.text}")
+        return {"error": r.json()}
+    print(f"✅ LinkedIn posted: {r.json()}")
+    return r.json()
+
+# Generic post dispatcher
+def post_content(app_name: str, content: str):
+    app_name = app_name.lower()
+    if app_name == "twitter":
+        return post_to_twitter(content)
+    elif app_name == "facebook":
+        return post_to_facebook(content)
+    elif app_name == "instagram":
+        return post_to_instagram(content)
+    elif app_name == "linkedin":
+        return post_to_linkedin(content)
+    else:
+        return {"error": f"Unsupported app: {app_name}"}
+
+# Schedule post endpoint
+@app.post("/schedule_post/")
+def schedule_post(task: PostTask):
     try:
         run_time = datetime.strptime(task.run_at, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid datetime format. Use YYYY-MM-DD HH:MM:SS")
 
     scheduler.add_job(
-        post_tweet,
+        post_content,
         "date",
         run_date=run_time,
-        args=[task.text],
-        id=f"tweet-{task.run_at}-{task.text[:10]}",
+        args=[task.app, task.content],
+        id=f"{task.app}-{task.run_at}-{task.content[:10]}",
         replace_existing=True,
     )
 
-    return {"message": "✅ Tweet scheduled!", "tweet": task.text, "time": task.run_at}
+    return {"message": f"✅ {task.app} post scheduled!", "app": task.app, "time": task.run_at}
 
-# ✅ API: list scheduled jobs
+# List scheduled jobs
 @app.get("/scheduled_jobs/")
 def get_scheduled_jobs():
     jobs = scheduler.get_jobs()
-    return [
-        {"id": job.id, "next_run_time": str(job.next_run_time), "func": str(job.func_ref)}
-        for job in jobs
-    ]
+    return [{"id": job.id, "next_run_time": str(job.next_run_time), "func": str(job.func_ref)} for job in jobs]
 
-# ✅ API: post tweet immediately
-@app.post("/tweet_now/")
-def tweet_now(task: TweetTask):
-    result = post_tweet(task.text)
+# Post immediately
+@app.post("/post_now/")
+def post_now(task: PostTask):
+    result = post_content(task.app, task.content)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    return {"message": "✅ Tweet posted immediately!", "tweet": result}
+    return {"message": f"✅ {task.app} posted immediately!", "result": result}
