@@ -25,15 +25,15 @@ export default function JobsPage() {
     <div className="flex flex-col items-center justify-center py-10">
       <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-2xl">
         <h1 className="text-2xl font-bold text-center text-blue-600 mb-6">
-          Scheduled Jobs
+          Scheduled Posts
         </h1>
 
         {loading ? (
-          <p className="text-center text-gray-500">Loading jobs...</p>
-        ) : jobs.length === 0 ? (
           <p className="text-center text-gray-500">
-            No scheduled tweets found.
+            Loading scheduled posts...
           </p>
+        ) : jobs.length === 0 ? (
+          <p className="text-center text-gray-500">No scheduled posts found.</p>
         ) : (
           <ul className="divide-y divide-gray-200">
             {jobs.map((job) => (
